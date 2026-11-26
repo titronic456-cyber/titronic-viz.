@@ -62,3 +62,5 @@ footer{padding:18px 16px;padding-bottom:max(18px,env(safe-area-inset-bottom));te
 .steps li:nth-child(even)::before{background:var(--red)}
 .note{font-size:.88rem}
 .drop[hidden]~.intro{display:none}
+.welcome{text-align:center;font-size:clamp(1.5rem,5vw,2.6rem);letter-spacing:-.02em;margin:0 0 20px;background:linear-gradient(90deg,var(--red),var(--blue));-webkit-background-clip:text;background-clip:text;color:transparent}
+.welcome:has(+ .drop[hidden]){display:none}
