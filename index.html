@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Titronic Visualization</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="mark"></span>Titronic <span class="light">Visualization</span></div>
+    <button id="reset" class="btn ghost" type="button" hidden>New file</button>
+  </header>
+
+  <main>
+    <label id="drop" class="drop">
+      <input id="file" type="file" accept=".csv,.tsv,.json,.xlsx,.xls,.pdf,.docx,.txt,.md">
+      <b>Drop a file here or tap to choose</b>
+      <span>CSV, Excel, JSON, PDF, Word, TXT</span>
+    </label>
+
+    <section id="studio" class="studio" hidden>
+      <aside class="panel">
+        <p id="name" class="name"></p>
+        <div class="field"><span class="label">Chart</span><div id="types" class="chips"></div></div>
+        <div class="field"><label class="label" for="xcol">X axis</label><select id="xcol"></select></div>
+        <div class="field"><span class="label">Values</span><div id="ycols" class="chips"></div></div>
+        <div class="field">
+          <label class="label" for="agg">Group</label>
+          <select id="agg">
+            <option value="none">None</option>
+            <option value="sum">Sum</option>
+            <option value="avg">Average</option>
+            <option value="count">Count</option>
+          </select>
+        </div>
+        <button id="download" class="btn" type="button">Download PNG</button>
+      </aside>
+      <div class="stage">
+        <div class="chart-wrap"><canvas id="chart"></canvas></div>
+        <details class="data"><summary>Data</summary><div class="table-wrap"><table id="table"></table></div></details>
+      </div>
+    </section>
+
+    <p id="msg" role="alert"></p>
+  </main>
+
+  <footer>Titronic.com</footer>
+  <script src="script.js"></script>
+</body>
+</html>
