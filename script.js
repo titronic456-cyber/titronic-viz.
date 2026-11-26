@@ -2,9 +2,13 @@
   'use strict';
   const $ = (s) => document.querySelector(s);
   const PAL = ['#1F4FFF', '#E5243B', '#0A2A9E', '#FF6B7D', '#5C84FF', '#B01228', '#A9BEFF', '#FFB3BC'];
-  const TYPES = [['bar', 'Bar'], ['hbar', 'Horizontal bar'], ['line', 'Line'], ['area', 'Area'], ['scatter', 'Scatter'],
+  const TYPES = [['bar', 'Bar'], ['hbar', 'Horizontal bar'], ['stackedBar', 'Stacked bar'], ['combo', 'Bar + line'],
+    ['line', 'Line'], ['step', 'Step line'], ['area', 'Area'], ['stackedArea', 'Stacked area'],
+    ['scatter', 'Scatter'], ['bubble', 'Bubble'], ['histogram', 'Histogram'],
     ['pie', 'Pie'], ['doughnut', 'Doughnut'], ['radar', 'Radar'], ['polarArea', 'Polar']];
   const SINGLE = ['pie', 'doughnut', 'polarArea'];
+  const ONE = [...SINGLE, 'histogram'];
+  const XY = ['scatter', 'bubble'];
   const MAX = 300, GRID = 'rgba(11,21,51,.08)';
   const PDFV = '3.11.174';
   const LIBS = {
@@ -162,7 +166,7 @@
   }
 
   function toggleY(c) {
-    state.ys = SINGLE.includes(state.type) ? [c] : state.ys.includes(c) ? state.ys.filter((y) => y !== c) : [...state.ys, c];
+    state.ys = ONE.includes(state.type) ? [c] : state.ys.includes(c) ? state.ys.filter((y) => y !== c) : [...state.ys, c];
     sync(); draw();
   }
 
@@ -208,38 +212,92 @@
 
   const kill = () => { if (state.chart) { state.chart.destroy(); state.chart = null; } };
 
+  function renderStats() {
+    const box = $('#stats');
+    if (!box) return;
+    box.replaceChildren();
+    const f = (n) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    state.ys.forEach((y) => {
+      const v = state.rows.map((r) => toNum(r[y])).filter((n) => n !== null);
+      if (!v.length) return;
+      const sum = v.reduce((a, b) => a + b, 0);
+      const min = v.reduce((a, b) => Math.min(a, b), Infinity);
+      const max = v.reduce((a, b) => Math.max(a, b), -Infinity);
+      const card = document.createElement('div');
+      card.className = 'stat';
+      const t = document.createElement('b');
+      t.textContent = y;
+      card.append(t);
+      [['Sum', sum], ['Average', sum / v.length], ['Min', min], ['Max', max]].forEach(([k, n]) => {
+        const s = document.createElement('span');
+        s.textContent = `${k}: ${f(n)}`;
+        card.append(s);
+      });
+      box.append(card);
+    });
+  }
+
   async function draw() {
     const { type, x, ys, agg, rows } = state;
-    setMsg(''); kill();
-    if ((type === 'scatter' || agg !== 'count') && !ys.length) return setMsg('Select a value column.');
+    setMsg(''); kill(); renderStats();
+    if ((XY.includes(type) || type === 'histogram' || agg !== 'count') && !ys.length) return setMsg('Select a value column.');
     try { await lib('Chart'); } catch (e) { return setMsg(e.message); }
     kill();
 
     const radial = SINGLE.includes(type);
     const numX = state.numeric.includes(x);
     let config;
-    if (type === 'scatter') {
-      config = {
-        type: 'scatter',
-        data: {
-          datasets: ys.map((y, i) => ({
-            label: y,
-            data: rows.slice(0, 2000).map((r, k) => ({ x: numX ? toNum(r[x]) : k + 1, y: toNum(r[y]) })).filter((p) => p.x !== null && p.y !== null),
-            backgroundColor: PAL[i % PAL.length] + 'CC', borderColor: PAL[i % PAL.length], pointRadius: 4
-          }))
-        }
-      };
+
+    if (XY.includes(type)) {
+      const xv = (r, k) => (numX ? toNum(r[x]) : k + 1);
+      let datasets;
+      if (type === 'bubble') {
+        const [y, z] = ys;
+        const d = rows.slice(0, 1000).map((r, k) => ({ x: xv(r, k), y: toNum(r[y]), z: z ? toNum(r[z]) : null })).filter((p) => p.x !== null && p.y !== null);
+        const zs = d.map((p) => p.z).filter((n) => n !== null);
+        const lo = zs.reduce((a, b) => Math.min(a, b), Infinity);
+        const hi = zs.reduce((a, b) => Math.max(a, b), -Infinity);
+        datasets = [{
+          label: z ? `${y} (size: ${z})` : y,
+          data: d.map((p) => ({ x: p.x, y: p.y, r: p.z === null || hi === lo ? 8 : 4 + 20 * (p.z - lo) / (hi - lo) })),
+          backgroundColor: PAL[0] + '99', borderColor: PAL[0]
+        }];
+      } else {
+        datasets = ys.map((y, i) => ({
+          label: y,
+          data: rows.slice(0, 2000).map((r, k) => ({ x: xv(r, k), y: toNum(r[y]) })).filter((p) => p.x !== null && p.y !== null),
+          backgroundColor: PAL[i % PAL.length] + 'CC', borderColor: PAL[i % PAL.length], pointRadius: 4
+        }));
+      }
+      config = { type, data: { datasets } };
+    } else if (type === 'histogram') {
+      const v = rows.map((r) => toNum(r[ys[0]])).filter((n) => n !== null);
+      if (!v.length) return setMsg('No numbers to plot.');
+      const lo = v.reduce((a, b) => Math.min(a, b), Infinity);
+      const hi = v.reduce((a, b) => Math.max(a, b), -Infinity);
+      const bins = Math.min(30, Math.max(5, Math.ceil(Math.log2(v.length) + 1)));
+      const w = (hi - lo) / bins || 1;
+      const counts = Array(bins).fill(0);
+      v.forEach((n) => { counts[Math.min(bins - 1, Math.floor((n - lo) / w))]++; });
+      const f = (n) => +n.toFixed(2);
+      const labels = counts.map((_, i) => `${f(lo + i * w)} to ${f(lo + (i + 1) * w)}`);
+      config = { type: 'bar', data: { labels, datasets: [{ label: `Count of ${ys[0]}`, data: counts, backgroundColor: PAL[0], borderRadius: 2, barPercentage: 1, categoryPercentage: 1 }] } };
     } else {
       const { labels, series } = buildData();
+      const lineLike = ['line', 'step', 'area', 'stackedArea', 'radar'];
       const datasets = series.map((s, i) => {
         const c = PAL[i % PAL.length];
+        const dots = labels.length > 60 ? 0 : 3;
         if (radial) return { label: s.name, data: s.data, backgroundColor: labels.map((_, j) => PAL[j % PAL.length]), borderColor: '#fff', borderWidth: 2 };
-        if (type === 'line' || type === 'area' || type === 'radar') {
-          return { label: s.name, data: s.data, borderColor: c, borderWidth: 2.5, tension: 0.3, spanGaps: true, backgroundColor: type === 'line' ? c : c + '33', fill: type !== 'line', pointRadius: labels.length > 60 ? 0 : 3 };
+        if (lineLike.includes(type)) {
+          const fill = type !== 'line' && type !== 'step';
+          return { label: s.name, data: s.data, borderColor: c, borderWidth: 2.5, tension: type === 'step' ? 0 : 0.3, stepped: type === 'step', spanGaps: true, fill, backgroundColor: fill ? c + (type === 'stackedArea' ? '99' : '33') : c, pointRadius: dots };
         }
+        if (type === 'combo' && i > 0) return { type: 'line', label: s.name, data: s.data, borderColor: c, backgroundColor: c, borderWidth: 2.5, tension: 0.3, spanGaps: true, pointRadius: dots };
         return { label: s.name, data: s.data, backgroundColor: c, borderRadius: 4 };
       });
-      config = { type: { hbar: 'bar', area: 'line' }[type] || type, data: { labels, datasets } };
+      const base = { hbar: 'bar', stackedBar: 'bar', combo: 'bar', area: 'line', stackedArea: 'line', step: 'line' }[type] || type;
+      config = { type: base, data: { labels, datasets } };
     }
 
     const options = {
@@ -247,10 +305,11 @@
       plugins: { legend: { display: radial || config.data.datasets.length > 1, labels: { usePointStyle: true } } }
     };
     if (!radial && type !== 'radar') {
+      const stacked = type === 'stackedBar' || type === 'stackedArea';
       options.indexAxis = type === 'hbar' ? 'y' : 'x';
       options.scales = {
-        x: { grid: { color: GRID }, title: { display: type === 'scatter', text: numX ? x : 'Row' } },
-        y: { grid: { color: GRID }, beginAtZero: type === 'bar' || type === 'hbar' }
+        x: { stacked, grid: { color: GRID }, title: { display: XY.includes(type), text: numX ? x : 'Row' } },
+        y: { stacked, grid: { color: GRID }, beginAtZero: ['bar', 'hbar', 'stackedBar', 'combo', 'histogram'].includes(type) }
       };
     }
     config.options = options;
@@ -260,7 +319,7 @@
   /* ---------- Events ---------- */
   TYPES.forEach(([id, label]) => el.types.append(chip(label, id, () => {
     state.type = id;
-    if (SINGLE.includes(id)) state.ys = state.ys.slice(0, 1);
+    if (ONE.includes(id)) state.ys = state.ys.slice(0, 1);
     sync(); draw();
   })));
   el.x.addEventListener('change', () => { state.x = el.x.value; draw(); });
